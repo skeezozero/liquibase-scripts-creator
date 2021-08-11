@@ -1,0 +1,32 @@
+version: 5.22.0
+date: 2021-07-23
+author: Serge Stepanov
+context: production,test
+
+new-users:
+  - accountNonExpired: true
+    accountNonLocked: true
+    credentialsNonExpired: true
+    enabled: true
+    firstName: Иван
+    lastName: Иванов
+    middleName: Иванович
+    password: qwerty
+    username: ivan_ivanov
+    domain: MOSCOW.NET
+    email: null
+    roles:
+      - DEVELOPER
+      - TEST
+  - accountNonExpired: true
+    accountNonLocked: true
+    credentialsNonExpired: true
+    enabled: true
+    firstName: Петр
+    lastName: Петров
+    middleName: Петрович
+    password: qwerty
+    username: petr_petrov
+    domain: MOSCOW.NET
+    email: petrov@local.host
+    roles: null
