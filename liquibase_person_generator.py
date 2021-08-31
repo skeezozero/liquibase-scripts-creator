@@ -2,8 +2,11 @@ import os
 import sys
 import yaml
 
+MODE_ROLE = 1
+MODE_AUTHORITY = 2
+MODE_USER = 3
 START_INFO = '''
-Liquibase Person Generator v 1.0.0 by Sk33z0
+Liquibase Script Generator v 1.0.0 by Skeezo
 '''
 HELP_INFO = '''Specify yml absolute path with parameters.
 
@@ -12,15 +15,13 @@ CUMULATIVE_TEMPLATE = '''<?xml version="1.0" encoding="UTF-8"?>
 <databaseChangeLog
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog ../dbchangelog-3.5.xsd"
-        context="$context">
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog ../dbchangelog-3.5.xsd">
 
 $file_template
 
 </databaseChangeLog>
 '''
-CUMULATIVE_CHANGELOG_TEMPLATE = '    <include file="$file_name" relativeToChangelogFile="true"/>'
-# todo change context to every changelog
+CUMULATIVE_FILE_TEMPLATE = '    <include file="$file_name" relativeToChangelogFile="true"/>'
 CHANGE_SET_TEMPLATE = '''<?xml version="1.0" encoding="UTF-8"?>
 <databaseChangeLog
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -37,6 +38,12 @@ CHANGE_SET_SQL_TEMPLATE = '''    <changeSet id="$change_set_name" author="$autho
             $sql
         </sql>
     </changeSet>'''
+SQL_USER_CREATION_TEMPLATE = '''            insert into USER_DETAILS (ACCOUNT_NON_EXPIRED, ACCOUNT_NON_LOCKED, CREDENTIALS_NON_EXPIRED, ENABLED, FIRST_NAME, LAST_NAME, MIDDLE_NAME, PASSWORD, USERNAME, DOMAIN, EMAIL)
+            values ($ACCOUNT_NON_EXPIRED, $ACCOUNT_NON_LOCKED, $CREDENTIALS_NON_EXPIRED, $ENABLED, '$FIRST_NAME', '$LAST_NAME', '$MIDDLE_NAME', '$PASSWORD', '$USERNAME', '$DOMAIN', $EMAIL);'''
+SQL_USER_AUDIT_TEMPLATE = '''            insert into USER_DETAILS_AUDIT(REVISION_ID, REVISION_TYPE, ID, ACCOUNT_NON_EXPIRED, ACCOUNT_NON_LOCKED, CREDENTIALS_NON_EXPIRED, DOMAIN, EMAIL, ENABLED, FIRST_NAME, LAST_NAME, MIDDLE_NAME, PASSWORD, USERNAME, PASSWORD_CHANGE_DATE)
+            select (select max(REVISION_ID) from REVISION_INFO), 0, ID, ACCOUNT_NON_EXPIRED, ACCOUNT_NON_LOCKED, CREDENTIALS_NON_EXPIRED, DOMAIN, EMAIL, ENABLED, FIRST_NAME, LAST_NAME, MIDDLE_NAME, PASSWORD, USERNAME, PASSWORD_CHANGE_DATE
+            from USER_DETAILS
+            where USERNAME = '$username';'''
 
 
 class User:
@@ -55,17 +62,57 @@ class User:
         self.email = person['email']
         self.roles = person['roles']
 
-# todo change context to every creation
+
+class Authority:
+
+    def __init__(self, authority: dict):
+        self.name = authority['name']
+        self.description = authority['description']
+        self.roles = authority['roles']
+
+
+class Role:
+
+    def __init__(self, role: dict):
+        self.name = role['name']
+        self.description = role['description']
+
+
 class Properties:
 
     def __init__(self, yml_properties: dict):
         self.version = yml_properties['version']
         self.date = str(yml_properties['date']).replace('-', '')
         self.author = yml_properties['author']
-        self.context = yml_properties['context']
+
+        self.roles_context = yml_properties['new-roles']['context'] if yml_properties['new-roles'] is not None else None
+        self.roles = []
+        self.users_context = yml_properties['new-users']['context'] if yml_properties['new-users'] is not None else None
         self.users = []
-        for user in yml_properties['new-users']:
-            self.users.append(User(user))
+        self.authorities_context = yml_properties['new-authorities']['context'] \
+            if yml_properties['new-authorities'] is not None else None
+        self.authorities = []
+
+        if self.users_context is not None:
+            for user in yml_properties['new-users']['users']:
+                self.users.append(User(user))
+
+        if self.roles_context is not None:
+            for role in yml_properties['new-roles']['roles']:
+                self.roles.append(Role(role))
+
+        if self.authorities_context is not None:
+            for authority in yml_properties['new-authorities']['authorities']:
+                self.authorities.append(Authority(authority))
+
+    def has_new_roles(self) -> bool:
+        return self.roles is not None and self.roles_context is not None
+
+    def has_new_authorities(self) -> bool:
+        return self.authorities is not None and self.authorities_context is not None
+
+    def has_new_users(self) -> bool:
+        return self.users is not None and self.users_context is not None
 
 
 def get_yml_path() -> str:
@@ -83,32 +130,105 @@ def create_dir(properties: Properties) -> str:
     return dir_path
 
 
-# todo add roles/authorities
-def create_cumulative_file(liquibase_dir_path: str, properties: Properties):
+def create_cumulative_file(liquibase_dir_path: str, properties: Properties) -> list:
     cumulative_file_path = f'{liquibase_dir_path}/changelog-v{properties.version}_cumulative.xml'
     cumulative_file = open(cumulative_file_path, "w")
-    cumulative_file_changelogs = CUMULATIVE_CHANGELOG_TEMPLATE.replace('$file_name',
-                                                                       f'{properties.date}_001_new_users.xml')
-    cumulative_file_text = CUMULATIVE_TEMPLATE.replace('$file_template', cumulative_file_changelogs)
-    cumulative_file.write(cumulative_file_text)
-    cumulative_file.close()
+    file_name_constant = '$file_name'
 
-# todo set change set file paths as args
-def create_user_change_set(liquibase_dir_path: str, properties: Properties):
-    change_set_file_path = f'{liquibase_dir_path}/{properties.date}_001_new_users.xml'
+    changelog_file_names_list = []
+    changelog_counter = 1
+    changelog_file_text = ''
+
+    if properties.has_new_roles():
+        file_name = f'{properties.date}_00{str(changelog_counter)}_DML_roles.xml'
+        changelog_file_text += CUMULATIVE_FILE_TEMPLATE.replace(file_name_constant, file_name)
+        changelog_counter += 1
+        changelog_file_names_list.append(file_name)
+
+    if properties.has_new_authorities():
+        if len(changelog_file_text) != 0:
+            changelog_file_text += '\n'
+        file_name = f'{properties.date}_00{str(changelog_counter)}_DML_authorities.xml'
+        changelog_file_text += CUMULATIVE_FILE_TEMPLATE.replace(file_name_constant, file_name)
+        changelog_counter += 1
+        changelog_file_names_list.append(file_name)
+
+    if properties.has_new_users():
+        if len(changelog_file_text) != 0:
+            changelog_file_text += '\n'
+        file_name = f'{properties.date}_00{str(changelog_counter)}_DML_users.xml'
+        changelog_file_text += CUMULATIVE_FILE_TEMPLATE.replace(file_name_constant, file_name)
+        changelog_file_names_list.append(file_name)
+
+    cumulative_file.write(CUMULATIVE_TEMPLATE.replace('$file_template', changelog_file_text))
+    cumulative_file.close()
+    return changelog_file_names_list
+
+
+def create_change_set_file(liquibase_dir_path: str, file_name: str, properties: Properties, mode: int):
+    change_set_file_path = f'{liquibase_dir_path}/{file_name}'
     change_set_file = open(change_set_file_path, "w")
 
-    user_sql_list = []
-    for user in properties.users:
-        user_sql_list.append(user)
-    sql = '\n'.join(list(map(str, user_sql_list)))
+    if mode == MODE_USER:
+        sql = create_user_sql(properties.users)
+        context = properties.users_context
+        change_set_file.write(CHANGE_SET_TEMPLATE.replace('$context', context).replace('$change_set', sql))
 
-    change_set_file.write(CHANGE_SET_TEMPLATE.replace('$context', properties.context).replace('$change_set', sql))
     change_set_file.close()
 
 
-def create_user_sql(user: User) -> str:
+def create_user_sql(users: list[User]) -> str:
+    creation_sql = []
 
+    for user in users:
+        creation_sql.append(SQL_USER_CREATION_TEMPLATE.
+                            replace('$ACCOUNT_NON_EXPIRED', '1' if user.account_non_expired else '0').
+                            replace('$ACCOUNT_NON_LOCKED', '1' if user.account_non_locked else '0').
+                            replace('$CREDENTIALS_NON_EXPIRED', '1' if user.credentials_non_expired else '0').
+                            replace('$ENABLED', '1' if user.enabled else '0').
+                            replace('$FIRST_NAME', user.first_name).
+                            replace('$LAST_NAME', user.last_name).
+                            replace('$MIDDLE_NAME', user.middle_name).
+                            replace('$PASSWORD', user.password).
+                            replace('$USERNAME', user.username).
+                            replace('$DOMAIN', user.domain).
+                            replace('$EMAIL', 'null' if user.email is None else f"'{user.email}'"))
+        creation_sql.append('')
+
+    creation_sql.append('            call NEW_REVISION_RECORD();')
+    creation_sql.append('')
+
+    for user in users:
+        creation_sql.append(SQL_USER_AUDIT_TEMPLATE.replace('$username', user.username))
+        creation_sql.append('')
+
+    return '\n'.join(list(map(str, creation_sql)))
+
+
+def has_new_data_in_properties(properties: Properties) -> bool:
+    return properties.has_new_users() or properties.has_new_roles() or properties.has_new_authorities()
+
+
+def get_file_name_contains_from_list(file_name_contains: str, file_names_list: list) -> str:
+    for file_name in file_names_list:
+        if file_name_contains in file_name:
+            return file_name
+    raise ValueError(f'There is no file contains "{file_name_contains}" in list: {file_names_list}')
+
+
+def create_change_set_files(properties: Properties, change_set_file_names_list: list, liquibase_dir_path: str):
+    if properties.has_new_roles():
+        create_change_set_file(liquibase_dir_path, get_file_name_contains_from_list('role', change_set_file_names_list),
+                               properties, MODE_ROLE)
+
+    if properties.has_new_authorities():
+        create_change_set_file(liquibase_dir_path,
+                               get_file_name_contains_from_list('authorities', change_set_file_names_list),
+                               properties, MODE_AUTHORITY)
+
+    if properties.has_new_users():
+        create_change_set_file(liquibase_dir_path, get_file_name_contains_from_list('user', change_set_file_names_list),
+                               properties, MODE_USER)
 
 
 def run():
@@ -119,8 +239,17 @@ def run():
             properties = Properties(yaml.safe_load(stream))
         except yaml.YAMLError as exc:
             print(exc)
+
+    if not has_new_data_in_properties(properties):
+        print('There is no data in yml file to create liquibase scripts')
+        exit(0)
+
     liquibase_dir_path = create_dir(properties)
-    create_cumulative_file(liquibase_dir_path, properties)
+    change_set_file_names_list = create_cumulative_file(liquibase_dir_path, properties)
+    create_change_set_files(properties, change_set_file_names_list, liquibase_dir_path)
+
+    print(f'Successful creation of the new files: {", ".join(change_set_file_names_list)} in {liquibase_dir_path}')
+    print(f'Don\'t forget to add cumulative.xml file to db.changelog.xml')
 
 
 run()
