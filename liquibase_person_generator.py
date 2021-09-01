@@ -43,6 +43,17 @@ SQL_ROLE_AUDIT_TEMPLATE = '''            insert into ROLE_AUDIT(REVISION_ID, REV
             select (select max(REVISION_ID) from REVISION_INFO), 0, NAME, DESCRIPTION
             from ROLE
             where NAME = '$NAME';'''
+SQL_AUTHORITY_CREATION_TEMPLATE = '''            insert into AUTHORITY(NAME, DESCRIPTION) values ('$NAME', '$DESCRIPTION');'''
+SQL_AUTHORITY_AUDIT_TEMPLATE = '''            insert into AUTHORITY_AUDIT(REVISION_ID, REVISION_TYPE, NAME, DESCRIPTION)
+            select (select max(REVISION_ID) from REVISION_INFO), 0, NAME, DESCRIPTION
+            from AUTHORITY
+            where NAME = '$NAME';'''
+SQL_AUTHORITY_TO_ROLE_CREATION_TEMPLATE = '''            insert into ROLES_AUTHORITIES(AUTHORITY_ID, ROLE_ID) 
+            values ((select ID from AUTHORITY where NAME = '$AUTHORITY_NAME'), (select ID from ROLE where NAME = '$ROLE_NAME'));'''
+SQL_AUTHORITY_TO_ROLE_AUDIT_TEMPLATE = '''            insert into ROLES_AUTHORITIES_AUDIT(REVISION_ID, REVISION_TYPE, ROLE_ID, AUTHORITY_ID)
+            select (select max(REVISION_ID) from REVISION_INFO), 0, (select ID from ROLE where NAME = '$ROLE_NAME'), ID
+            from AUTHORITY
+            where NAME = '$AUTHORITY_NAME';'''
 SQL_USER_CREATION_TEMPLATE = '''            insert into USER_DETAILS (ACCOUNT_NON_EXPIRED, ACCOUNT_NON_LOCKED, CREDENTIALS_NON_EXPIRED, ENABLED, FIRST_NAME, LAST_NAME, MIDDLE_NAME, PASSWORD, USERNAME, DOMAIN, EMAIL)
             values ($ACCOUNT_NON_EXPIRED, $ACCOUNT_NON_LOCKED, $CREDENTIALS_NON_EXPIRED, $ENABLED, '$FIRST_NAME', '$LAST_NAME', '$MIDDLE_NAME', '$PASSWORD', '$USERNAME', '$DOMAIN', $EMAIL);'''
 SQL_USER_TO_ROLE_TEMPLATE = '''            insert into USER_DETAILS_ROLES(ROLE_ID, USER_DETAILS_ID) 
@@ -185,7 +196,10 @@ def create_change_set_file(liquibase_dir_path: str, file_name: str, properties: 
         context = properties.roles_context
         change_set_file.write(CHANGE_SET_TEMPLATE.replace('$context', context).replace('$change_set', sql))
 
-    # if mode == MODE_AUTHORITY:
+    if mode == MODE_AUTHORITY:
+        sql = create_authority_sql(properties)
+        context = properties.authorities_context
+        change_set_file.write(CHANGE_SET_TEMPLATE.replace('$context', context).replace('$change_set', sql))
 
     if mode == MODE_USER:
         sql = create_user_sql(properties)
@@ -220,9 +234,40 @@ def create_role_sql(properties: Properties) -> str:
         .replace('$author', properties.author).replace('$change_set_name', change_set_name)
 
 
-# todo
-def create_authority_sql(authorities: list[Authority]) -> str:
-    return ''
+def create_authority_sql(properties: Properties) -> str:
+    authorities = properties.authorities
+    sql_query_list = []
+    authority_names = []
+
+    for authority in authorities:
+        authority_names.append(authority.name)
+        sql_query_list.append(SQL_AUTHORITY_CREATION_TEMPLATE
+                              .replace('$NAME', authority.name)
+                              .replace('$DESCRIPTION', authority.description))
+        sql_query_list.append('')
+        if authority.roles is not None and len(list(authority.roles)) > 0:
+            for role in authority.roles:
+                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_CREATION_TEMPLATE.replace('$ROLE_NAME', role)
+                                      .replace('$AUTHORITY_NAME', authority.name))
+                sql_query_list.append('')
+
+    sql_query_list.append('            call NEW_REVISION_RECORD();')
+    sql_query_list.append('')
+
+    for authority in authorities:
+        sql_query_list.append(SQL_AUTHORITY_AUDIT_TEMPLATE.replace('$NAME', authority.name))
+        sql_query_list.append('')
+        if authority.roles is not None and len(list(authority.roles)) > 0:
+            for role in authority.roles:
+                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_AUDIT_TEMPLATE.replace('$ROLE_NAME', role)
+                                      .replace('$AUTHORITY_NAME', authority.name))
+                sql_query_list.append('')
+
+    sql_query = '\n'.join(sql_query_list[:-1])
+    comment = f'Add new authorities: {", ".join(authority_names)}'
+    change_set_name = f'{properties.date}_001_new_authorities'
+    return CHANGE_SET_SQL_TEMPLATE.replace('$sql', sql_query).replace('$comment', comment) \
+        .replace('$author', properties.author).replace('$change_set_name', change_set_name)
 
 
 def create_user_sql(properties: Properties) -> str:
