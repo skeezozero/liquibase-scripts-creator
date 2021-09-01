@@ -35,15 +35,22 @@ $change_set
 CHANGE_SET_SQL_TEMPLATE = '''    <changeSet id="$change_set_name" author="$author" logicalFilePath="path-independent">
         <comment>$comment</comment>
         <sql>
-            $sql
+$sql
         </sql>
     </changeSet>'''
+# todo add new sql if link role and user
 SQL_USER_CREATION_TEMPLATE = '''            insert into USER_DETAILS (ACCOUNT_NON_EXPIRED, ACCOUNT_NON_LOCKED, CREDENTIALS_NON_EXPIRED, ENABLED, FIRST_NAME, LAST_NAME, MIDDLE_NAME, PASSWORD, USERNAME, DOMAIN, EMAIL)
             values ($ACCOUNT_NON_EXPIRED, $ACCOUNT_NON_LOCKED, $CREDENTIALS_NON_EXPIRED, $ENABLED, '$FIRST_NAME', '$LAST_NAME', '$MIDDLE_NAME', '$PASSWORD', '$USERNAME', '$DOMAIN', $EMAIL);'''
+SQL_USER_TO_ROLE_TEMPLATE = '''            insert into USER_DETAILS_ROLES(ROLE_ID, USER_DETAILS_ID) 
+            values ((select ID from ROLE where NAME = '$ROLE_NAME'), (select ID from USER_DETAILS where USERNAME = '$USERNAME'));'''
 SQL_USER_AUDIT_TEMPLATE = '''            insert into USER_DETAILS_AUDIT(REVISION_ID, REVISION_TYPE, ID, ACCOUNT_NON_EXPIRED, ACCOUNT_NON_LOCKED, CREDENTIALS_NON_EXPIRED, DOMAIN, EMAIL, ENABLED, FIRST_NAME, LAST_NAME, MIDDLE_NAME, PASSWORD, USERNAME, PASSWORD_CHANGE_DATE)
             select (select max(REVISION_ID) from REVISION_INFO), 0, ID, ACCOUNT_NON_EXPIRED, ACCOUNT_NON_LOCKED, CREDENTIALS_NON_EXPIRED, DOMAIN, EMAIL, ENABLED, FIRST_NAME, LAST_NAME, MIDDLE_NAME, PASSWORD, USERNAME, PASSWORD_CHANGE_DATE
             from USER_DETAILS
-            where USERNAME = '$username';'''
+            where USERNAME = '$USERNAME';'''
+SQL_USER_TO_ROLE_AUDIT_TEMPLATE = '''            insert into USER_DETAILS_ROLES_AUDIT(REVISION_ID, REVISION_TYPE, ROLE_ID, USER_DETAILS_ID)
+            select (select max(REVISION_ID) from REVISION_INFO), 0, (select ID from ROLE where NAME = '$ROLE_NAME'), ID
+            from USER_DETAILS
+            where USERNAME = '$USERNAME';'''
 
 
 class User:
@@ -170,39 +177,63 @@ def create_change_set_file(liquibase_dir_path: str, file_name: str, properties: 
     change_set_file = open(change_set_file_path, "w")
 
     if mode == MODE_USER:
-        sql = create_user_sql(properties.users)
+        sql = create_user_sql(properties)
         context = properties.users_context
         change_set_file.write(CHANGE_SET_TEMPLATE.replace('$context', context).replace('$change_set', sql))
 
     change_set_file.close()
 
 
-def create_user_sql(users: list[User]) -> str:
-    creation_sql = []
+# def create_role_sql(roles: list[Role]) -> str:
+#
+#
+#
+# def create_authority_sql(authorities: list[Authority]) -> str:
+
+
+def create_user_sql(properties: Properties) -> str:
+    users = properties.users
+    sql_query_list = []
+    usernames = []
 
     for user in users:
-        creation_sql.append(SQL_USER_CREATION_TEMPLATE.
-                            replace('$ACCOUNT_NON_EXPIRED', '1' if user.account_non_expired else '0').
-                            replace('$ACCOUNT_NON_LOCKED', '1' if user.account_non_locked else '0').
-                            replace('$CREDENTIALS_NON_EXPIRED', '1' if user.credentials_non_expired else '0').
-                            replace('$ENABLED', '1' if user.enabled else '0').
-                            replace('$FIRST_NAME', user.first_name).
-                            replace('$LAST_NAME', user.last_name).
-                            replace('$MIDDLE_NAME', user.middle_name).
-                            replace('$PASSWORD', user.password).
-                            replace('$USERNAME', user.username).
-                            replace('$DOMAIN', user.domain).
-                            replace('$EMAIL', 'null' if user.email is None else f"'{user.email}'"))
-        creation_sql.append('')
+        usernames.append(user.username)
+        sql_query_list.append(SQL_USER_CREATION_TEMPLATE
+                              .replace('$ACCOUNT_NON_EXPIRED', '1' if user.account_non_expired else '0')
+                              .replace('$ACCOUNT_NON_LOCKED', '1' if user.account_non_locked else '0')
+                              .replace('$CREDENTIALS_NON_EXPIRED', '1' if user.credentials_non_expired else '0')
+                              .replace('$ENABLED', '1' if user.enabled else '0')
+                              .replace('$FIRST_NAME', user.first_name)
+                              .replace('$LAST_NAME', user.last_name)
+                              .replace('$MIDDLE_NAME', user.middle_name)
+                              .replace('$PASSWORD', user.password)
+                              .replace('$USERNAME', user.username)
+                              .replace('$DOMAIN', user.domain)
+                              .replace('$EMAIL', 'null' if user.email is None else f"'{user.email}'"))
+        sql_query_list.append('')
+        if user.roles is not None and len(list(user.roles)) > 0:
+            for role in user.roles:
+                sql_query_list.append(SQL_USER_TO_ROLE_TEMPLATE.replace('$ROLE_NAME', role)
+                                      .replace('$USERNAME', user.username))
+                sql_query_list.append('')
 
-    creation_sql.append('            call NEW_REVISION_RECORD();')
-    creation_sql.append('')
+    sql_query_list.append('            call NEW_REVISION_RECORD();')
+    sql_query_list.append('')
 
     for user in users:
-        creation_sql.append(SQL_USER_AUDIT_TEMPLATE.replace('$username', user.username))
-        creation_sql.append('')
+        sql_query_list.append(SQL_USER_AUDIT_TEMPLATE.replace('$USERNAME', user.username))
+        sql_query_list.append('')
+        if user.roles is not None and len(list(user.roles)) > 0:
+            for role in user.roles:
+                sql_query_list.append(SQL_USER_TO_ROLE_AUDIT_TEMPLATE.replace('$ROLE_NAME', role)
+                                      .replace('$USERNAME', user.username))
+                sql_query_list.append('')
 
-    return '\n'.join(list(map(str, creation_sql)))
+    sql_query = '\n'.join(sql_query_list[:-1])
+    comment = f'Add new users: {", ".join(usernames)}'
+    change_set_name = f'{properties.date}_001_new users'
+    return CHANGE_SET_SQL_TEMPLATE.replace('$sql', sql_query).replace('$comment', comment) \
+        .replace('$author', properties.author).replace('$change_set_name', change_set_name)
 
 
 def has_new_data_in_properties(properties: Properties) -> bool:
