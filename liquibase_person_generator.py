@@ -38,7 +38,11 @@ CHANGE_SET_SQL_TEMPLATE = '''    <changeSet id="$change_set_name" author="$autho
 $sql
         </sql>
     </changeSet>'''
-# todo add new sql if link role and user
+SQL_ROLE_CREATION_TEMPLATE = '''            insert into ROLE(NAME, DESCRIPTION) values ('$NAME', '$DESCRIPTION');'''
+SQL_ROLE_AUDIT_TEMPLATE = '''            insert into ROLE_AUDIT(REVISION_ID, REVISION_TYPE, NAME, DESCRIPTION)
+            select (select max(REVISION_ID) from REVISION_INFO), 0, NAME, DESCRIPTION
+            from ROLE
+            where NAME = '$NAME';'''
 SQL_USER_CREATION_TEMPLATE = '''            insert into USER_DETAILS (ACCOUNT_NON_EXPIRED, ACCOUNT_NON_LOCKED, CREDENTIALS_NON_EXPIRED, ENABLED, FIRST_NAME, LAST_NAME, MIDDLE_NAME, PASSWORD, USERNAME, DOMAIN, EMAIL)
             values ($ACCOUNT_NON_EXPIRED, $ACCOUNT_NON_LOCKED, $CREDENTIALS_NON_EXPIRED, $ENABLED, '$FIRST_NAME', '$LAST_NAME', '$MIDDLE_NAME', '$PASSWORD', '$USERNAME', '$DOMAIN', $EMAIL);'''
 SQL_USER_TO_ROLE_TEMPLATE = '''            insert into USER_DETAILS_ROLES(ROLE_ID, USER_DETAILS_ID) 
@@ -124,7 +128,7 @@ class Properties:
 
 def get_yml_path() -> str:
     args = sys.argv
-    if len(args) != 2:
+    if len(args) != 2 or '--yml-file-name=' not in args[1]:
         print('Arguments Error')
         print(HELP_INFO)
         exit(1)
@@ -176,6 +180,13 @@ def create_change_set_file(liquibase_dir_path: str, file_name: str, properties: 
     change_set_file_path = f'{liquibase_dir_path}/{file_name}'
     change_set_file = open(change_set_file_path, "w")
 
+    if mode == MODE_ROLE:
+        sql = create_role_sql(properties)
+        context = properties.roles_context
+        change_set_file.write(CHANGE_SET_TEMPLATE.replace('$context', context).replace('$change_set', sql))
+
+    # if mode == MODE_AUTHORITY:
+
     if mode == MODE_USER:
         sql = create_user_sql(properties)
         context = properties.users_context
@@ -184,11 +195,34 @@ def create_change_set_file(liquibase_dir_path: str, file_name: str, properties: 
     change_set_file.close()
 
 
-# def create_role_sql(roles: list[Role]) -> str:
-#
-#
-#
-# def create_authority_sql(authorities: list[Authority]) -> str:
+def create_role_sql(properties: Properties) -> str:
+    sql_query_list = []
+    roles = properties.roles
+    role_names = []
+
+    for role in roles:
+        role_names.append(role.name)
+        sql_query_list.append(
+            SQL_ROLE_CREATION_TEMPLATE.replace('$NAME', role.name).replace('$DESCRIPTION', role.description))
+        sql_query_list.append('')
+
+    sql_query_list.append('            call NEW_REVISION_RECORD();')
+    sql_query_list.append('')
+
+    for role in roles:
+        sql_query_list.append(SQL_ROLE_AUDIT_TEMPLATE.replace('$NAME', role.name))
+        sql_query_list.append('')
+
+    sql_query = '\n'.join(sql_query_list[:-1])
+    comment = f'Add new roles: {", ".join(role_names)}'
+    change_set_name = f'{properties.date}_001_new_roles'
+    return CHANGE_SET_SQL_TEMPLATE.replace('$sql', sql_query).replace('$comment', comment) \
+        .replace('$author', properties.author).replace('$change_set_name', change_set_name)
+
+
+# todo
+def create_authority_sql(authorities: list[Authority]) -> str:
+    return ''
 
 
 def create_user_sql(properties: Properties) -> str:
@@ -231,7 +265,7 @@ def create_user_sql(properties: Properties) -> str:
 
     sql_query = '\n'.join(sql_query_list[:-1])
     comment = f'Add new users: {", ".join(usernames)}'
-    change_set_name = f'{properties.date}_001_new users'
+    change_set_name = f'{properties.date}_001_new_users'
     return CHANGE_SET_SQL_TEMPLATE.replace('$sql', sql_query).replace('$comment', comment) \
         .replace('$author', properties.author).replace('$change_set_name', change_set_name)
 
