@@ -1,4 +1,4 @@
-# Liquibase Python Person Generator
+# Liquibase Python Scripts Generator
 Quick way to create multiple liquibase scripts via python.
 
 ---
