@@ -2,6 +2,7 @@ import os
 import sys
 import yaml
 
+SCRIPT_VERSION = '1.1.0'
 ROLE_NAME_CONSTANT = '$ROLE_NAME'
 CHANGE_SET_NAME_CONSTANT = '$change_set_name'
 AUTHOR_CONSTANT = '$author'
@@ -16,9 +17,9 @@ MODE_USER = 3
 MODE_AUTHORITIES_TO_ROLES = 4
 MODE_USERS_TO_ROLES = 5
 
-START_INFO = '''
-Liquibase Script Generator v 1.0.0
-'''
+START_INFO = f'''
+Liquibase Script Generator v <version>
+'''.replace('<version>', SCRIPT_VERSION)
 HELP_INFO = '''Options:
 1. Specify yml absolute path with parameters. Example: "python3 liquibase_person_generator.py C://script/example.yml"
 2. Create example .yml file: "python3 liquibase_person_generator.py createExample"'''
@@ -155,12 +156,12 @@ users-to-roles:
     - test
   link:
     - usernames:
-        - existing_authority1
-        - existing_authority2
+        - test_user1
+        - test_user2
       to-roles:
         - DEVELOPER
     - usernames:
-        - existing_authority3
+        - test_user3
       to-roles:
         - TEST
         - DEVELOPER'''
@@ -367,17 +368,61 @@ def create_change_set_file(liquibase_dir_path: str, file_name: str, properties: 
         context = properties.authorities_context
         change_set_file.write(CHANGE_SET_TEMPLATE.replace(CONTEXT_CONSTANT, context).replace(CHANGE_SET_CONSTANT, sql))
 
+    if mode == MODE_USER:
+        sql = create_user_sql(properties)
+        context = properties.users_context
+        change_set_file.write(CHANGE_SET_TEMPLATE.replace(CONTEXT_CONSTANT, context).replace(CHANGE_SET_CONSTANT, sql))
+
     if mode == MODE_AUTHORITIES_TO_ROLES:
         sql = create_authorities_to_roles_sql(properties)
         context = properties.authorities_to_roles_context
         change_set_file.write(CHANGE_SET_TEMPLATE.replace(CONTEXT_CONSTANT, context).replace(CHANGE_SET_CONSTANT, sql))
 
-    # if mode == MODE_USERS_TO_ROLES:
-    #     sql = create_users_to_roles_sql(properties)
-    #     context = properties.users_to_roles_context
-    #     change_set_file.write(CHANGE_SET_TEMPLATE.replace(CONTEXT_CONSTANT, context).replace(CHANGE_SET_CONSTANT, sql))
+    if mode == MODE_USERS_TO_ROLES:
+        sql = create_users_to_roles_sql(properties)
+        context = properties.users_to_roles_context
+        change_set_file.write(CHANGE_SET_TEMPLATE.replace(CONTEXT_CONSTANT, context).replace(CHANGE_SET_CONSTANT, sql))
 
     change_set_file.close()
+
+
+def create_users_to_roles_sql(properties: Properties) -> str:
+    users_to_roles_list = properties.users_to_roles
+    sql_query_list = []
+    usernames = []
+
+    add_users_to_roles_in_sql_query_list(sql_query_list, usernames, users_to_roles_list)
+
+    sql_query_list.append(SQL_NEW_REVISION_RECORD)
+    sql_query_list.append('')
+
+    add_audit_in_users_to_roles_sql_query_list(sql_query_list, users_to_roles_list)
+
+    sql_query = '\n'.join(sql_query_list[:-1])
+    comment = 'Add new link between roles and users'
+    change_set_name = f'{properties.date}_001_new_link_between_roles_and_authorities'
+    return CHANGE_SET_SQL_TEMPLATE.replace('$sql', sql_query).replace(COMMENT_CONSTANT, comment) \
+        .replace(AUTHOR_CONSTANT, properties.author).replace(CHANGE_SET_NAME_CONSTANT, change_set_name)
+
+
+def add_audit_in_users_to_roles_sql_query_list(sql_query_list: list, users_to_roles_list: list[UsersToRoles]):
+    for users_roles in users_to_roles_list:
+        for username in users_roles.users:
+            for role in users_roles.to_roles:
+                sql_query_list.append(SQL_USER_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace(USERNAME_CONSTANT, username))
+                sql_query_list.append('')
+
+
+def add_users_to_roles_in_sql_query_list(sql_query_list: list, usernames: list,
+                                         users_to_roles_list: list[UsersToRoles]):
+    for users_roles in users_to_roles_list:
+        for username in users_roles.users:
+            usernames.append(username)
+            for role in users_roles.to_roles:
+                sql_query_list.append(SQL_USER_TO_ROLE_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace(USERNAME_CONSTANT, username))
+                sql_query_list.append('')
 
 
 def create_role_sql(properties: Properties) -> str:
@@ -492,27 +537,28 @@ def add_users_in_sql_query_list(sql_query_list, usernames, users):
 
 
 def create_authorities_to_roles_sql(properties: Properties) -> str:
-    authorities_to_roles = properties.authorities_to_roles
+    authorities_to_roles_list = properties.authorities_to_roles
     sql_query_list = []
     authority_names = []
 
-    add_authorities_to_roles_in_sql_query_list(authorities_to_roles, authority_names, sql_query_list)
+    add_authorities_to_roles_in_sql_query_list(authorities_to_roles_list, authority_names, sql_query_list)
 
     sql_query_list.append(SQL_NEW_REVISION_RECORD)
     sql_query_list.append('')
 
-    add_audit_in_authorities_roles_sql_query_list(authorities_to_roles, sql_query_list)
+    add_audit_in_authorities_roles_sql_query_list(authorities_to_roles_list, sql_query_list)
 
     sql_query = '\n'.join(sql_query_list[:-1])
-    comment = 'Add new roles authorities'
-    change_set_name = f'{properties.date}_001_new_roles_authorities'
+    comment = 'Add new link between roles and authorities'
+    change_set_name = f'{properties.date}_001_new_link_between_roles_and_authorities'
     return CHANGE_SET_SQL_TEMPLATE.replace('$sql', sql_query).replace(COMMENT_CONSTANT, comment) \
         .replace(AUTHOR_CONSTANT, properties.author).replace(CHANGE_SET_NAME_CONSTANT, change_set_name)
 
 
-def add_authorities_to_roles_in_sql_query_list(authorities_to_roles: list[AuthoritiesToRoles], authority_names: list,
+def add_authorities_to_roles_in_sql_query_list(authorities_to_roles_list: list[AuthoritiesToRoles],
+                                               authority_names: list,
                                                sql_query_list: list):
-    for authorities_roles in authorities_to_roles:
+    for authorities_roles in authorities_to_roles_list:
         for authority in authorities_roles.authorities:
             authority_names.append(authority)
             for role in authorities_roles.to_roles:
@@ -521,8 +567,9 @@ def add_authorities_to_roles_in_sql_query_list(authorities_to_roles: list[Author
                 sql_query_list.append('')
 
 
-def add_audit_in_authorities_roles_sql_query_list(authorities_to_roles: list[AuthoritiesToRoles], sql_query_list: list):
-    for authorities_roles in authorities_to_roles:
+def add_audit_in_authorities_roles_sql_query_list(authorities_to_roles_list: list[AuthoritiesToRoles],
+                                                  sql_query_list: list):
+    for authorities_roles in authorities_to_roles_list:
         for authority in authorities_roles.authorities:
             for role in authorities_roles.to_roles:
                 sql_query_list.append(SQL_AUTHORITY_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
@@ -561,7 +608,7 @@ def create_change_set_files(properties: Properties, change_set_file_names_list: 
 
     if properties.has_new_authorities():
         create_change_set_file(liquibase_dir_path,
-                               get_file_name_contains_from_list('authorities', 'to', change_set_file_names_list),
+                               get_file_name_contains_from_list('authorit', 'to', change_set_file_names_list),
                                properties, MODE_AUTHORITY)
 
     if properties.has_new_users():
