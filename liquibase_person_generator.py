@@ -13,6 +13,8 @@ USERNAME_CONSTANT = '$USERNAME'
 MODE_ROLE = 1
 MODE_AUTHORITY = 2
 MODE_USER = 3
+MODE_AUTHORITIES_TO_ROLES = 4
+MODE_USERS_TO_ROLES = 5
 
 START_INFO = '''
 Liquibase Script Generator v 1.0.0
@@ -81,7 +83,9 @@ date: 2021-07-23
 author: Test Testovich
 
 new-roles:
-  context: production,test
+  context:
+    - production
+    - test
   roles:
     - name: TEST
       description: test_role_description
@@ -99,7 +103,9 @@ new-authorities:
         - TEST
 
 new-users:
-  context: production,test
+  context:
+    - production
+    - test
   users:
     - accountNonExpired: true
       accountNonLocked: true
@@ -126,7 +132,99 @@ new-users:
       username: petr_petrov
       domain: MOSCOW.NET
       email: petrov@local.host
-      roles: null'''
+      roles: null
+
+authorities-to-roles:
+  context:
+    - test
+  link:
+    - authorities:
+        - existing_authority1
+        - existing_authority2
+      to-roles:
+        - DEVELOPER
+    - authorities:
+        - existing_authority3
+      to-roles:
+        - TEST
+        - DEVELOPER
+
+users-to-roles:
+  context:
+    - production
+    - test
+  link:
+    - usernames:
+        - existing_authority1
+        - existing_authority2
+      to-roles:
+        - DEVELOPER
+    - usernames:
+        - existing_authority3
+      to-roles:
+        - TEST
+        - DEVELOPER'''
+
+
+class Properties:
+
+    def __init__(self, yml_properties: dict):
+        self.version = yml_properties['version']
+        self.date = str(yml_properties['date']).replace('-', '')
+        self.author = yml_properties['author']
+
+        self.roles = []
+        self.authorities = []
+        self.users = []
+        self.authorities_to_roles = []
+        self.users_to_roles = []
+
+        self.roles_context = self.__set_context(yml_properties, 'new-roles')
+        self.users_context = self.__set_context(yml_properties, 'new-users')
+        self.authorities_context = self.__set_context(yml_properties, 'new-authorities')
+        self.authorities_to_roles_context = self.__set_context(yml_properties, 'authorities-to-roles')
+        self.users_to_roles_context = self.__set_context(yml_properties, 'users-to-roles')
+
+        if self.users_context is not None:
+            for user in yml_properties['new-users']['users']:
+                self.users.append(User(user))
+        if self.roles_context is not None:
+            for role in yml_properties['new-roles']['roles']:
+                self.roles.append(Role(role))
+        if self.authorities_context is not None:
+            for authority in yml_properties['new-authorities']['authorities']:
+                self.authorities.append(Authority(authority))
+        if self.authorities_to_roles_context is not None:
+            for authorities_roles in yml_properties['authorities-to-roles']['link']:
+                self.authorities_to_roles.append(AuthoritiesToRoles(authorities_roles))
+        if self.users_to_roles_context is not None:
+            for users_roles in yml_properties['users-to-roles']['link']:
+                self.users_to_roles.append(UsersToRoles(users_roles))
+
+    def has_new_roles(self) -> bool:
+        return self.roles is not None and self.roles_context is not None
+
+    def has_new_authorities(self) -> bool:
+        return self.authorities is not None and self.authorities_context is not None
+
+    def has_new_users(self) -> bool:
+        return self.users is not None and self.users_context is not None
+
+    def has_new_authorities_to_roles(self) -> bool:
+        return self.authorities_to_roles is not None and self.authorities_to_roles_context is not None
+
+    def has_new_users_to_roles(self) -> bool:
+        return self.users_to_roles is not None and self.users_to_roles_context is not None
+
+    def has_new_data_in_properties(self) -> bool:
+        return self.has_new_users() or self.has_new_roles() or self.has_new_authorities() or \
+               self.has_new_authorities_to_roles() or self.has_new_users_to_roles()
+
+    def __set_context(self, yml_properties: dict, first_level_filed_name: str):
+        try:
+            return ' OR '.join(list(yml_properties[first_level_filed_name]['context']))
+        except KeyError:
+            return None
 
 
 class User:
@@ -167,53 +265,18 @@ class Role:
         self.description = role['description']
 
 
-class Properties:
+class AuthoritiesToRoles:
 
-    def __init__(self, yml_properties: dict):
-        self.version = yml_properties['version']
-        self.date = str(yml_properties['date']).replace('-', '')
-        self.author = yml_properties['author']
+    def __init__(self, auth_to_roles: dict):
+        self.authorities = auth_to_roles['authorities']
+        self.to_roles = auth_to_roles['to-roles']
 
-        self.roles = []
-        self.authorities = []
-        self.users = []
 
-        try:
-            self.roles_context = str(yml_properties['new-roles']['context']).replace(',', ' OR ')
-        except KeyError:
-            self.roles_context = None
-        try:
-            self.users_context = str(yml_properties['new-users']['context']).replace(',', ' OR ')
-        except KeyError:
-            self.users_context = None
-        try:
-            self.authorities_context = str(yml_properties['new-authorities']['context']).replace(',', ' OR ')
-        except KeyError:
-            self.authorities_context = None
+class UsersToRoles:
 
-        if self.users_context is not None:
-            for user in yml_properties['new-users']['users']:
-                self.users.append(User(user))
-
-        if self.roles_context is not None:
-            for role in yml_properties['new-roles']['roles']:
-                self.roles.append(Role(role))
-
-        if self.authorities_context is not None:
-            for authority in yml_properties['new-authorities']['authorities']:
-                self.authorities.append(Authority(authority))
-
-    def has_new_roles(self) -> bool:
-        return self.roles is not None and self.roles_context is not None
-
-    def has_new_authorities(self) -> bool:
-        return self.authorities is not None and self.authorities_context is not None
-
-    def has_new_users(self) -> bool:
-        return self.users is not None and self.users_context is not None
-
-    def has_new_data_in_properties(self) -> bool:
-        return self.has_new_users() or self.has_new_roles() or self.has_new_authorities()
+    def __init__(self, users_to_roles: dict):
+        self.users = users_to_roles['usernames']
+        self.to_roles = users_to_roles['to-roles']
 
 
 def check_args_and_get_yml_path() -> str:
@@ -266,6 +329,23 @@ def create_cumulative_file(liquibase_dir_path: str, properties: Properties) -> l
             changelog_file_text += '\n'
         file_name = f'{properties.date}_00{str(changelog_counter)}_DML_users.xml'
         changelog_file_text += CUMULATIVE_FILE_TEMPLATE.replace(file_name_constant, file_name)
+        changelog_counter += 1
+        changelog_file_names_list.append(file_name)
+
+    if properties.has_new_authorities_to_roles():
+        if len(changelog_file_text) != 0:
+            changelog_file_text += '\n'
+        file_name = f'{properties.date}_00{str(changelog_counter)}_DML_authorities_to_roles.xml'
+        changelog_file_text += CUMULATIVE_FILE_TEMPLATE.replace(file_name_constant, file_name)
+        changelog_counter += 1
+        changelog_file_names_list.append(file_name)
+
+    if properties.has_new_users_to_roles():
+        if len(changelog_file_text) != 0:
+            changelog_file_text += '\n'
+        file_name = f'{properties.date}_00{str(changelog_counter)}_DML_users_to_roles.xml'
+        changelog_file_text += CUMULATIVE_FILE_TEMPLATE.replace(file_name_constant, file_name)
+        changelog_counter += 1
         changelog_file_names_list.append(file_name)
 
     cumulative_file.write(CUMULATIVE_TEMPLATE.replace('$file_template', changelog_file_text))
@@ -287,10 +367,15 @@ def create_change_set_file(liquibase_dir_path: str, file_name: str, properties: 
         context = properties.authorities_context
         change_set_file.write(CHANGE_SET_TEMPLATE.replace(CONTEXT_CONSTANT, context).replace(CHANGE_SET_CONSTANT, sql))
 
-    if mode == MODE_USER:
-        sql = create_user_sql(properties)
-        context = properties.users_context
+    if mode == MODE_AUTHORITIES_TO_ROLES:
+        sql = create_authorities_to_roles_sql(properties)
+        context = properties.authorities_to_roles_context
         change_set_file.write(CHANGE_SET_TEMPLATE.replace(CONTEXT_CONSTANT, context).replace(CHANGE_SET_CONSTANT, sql))
+
+    # if mode == MODE_USERS_TO_ROLES:
+    #     sql = create_users_to_roles_sql(properties)
+    #     context = properties.users_to_roles_context
+    #     change_set_file.write(CHANGE_SET_TEMPLATE.replace(CONTEXT_CONSTANT, context).replace(CHANGE_SET_CONSTANT, sql))
 
     change_set_file.close()
 
@@ -406,41 +491,93 @@ def add_users_in_sql_query_list(sql_query_list, usernames, users):
                 sql_query_list.append('')
 
 
+def create_authorities_to_roles_sql(properties: Properties) -> str:
+    authorities_to_roles = properties.authorities_to_roles
+    sql_query_list = []
+    authority_names = []
+
+    add_authorities_to_roles_in_sql_query_list(authorities_to_roles, authority_names, sql_query_list)
+
+    sql_query_list.append(SQL_NEW_REVISION_RECORD)
+    sql_query_list.append('')
+
+    add_audit_in_authorities_roles_sql_query_list(authorities_to_roles, sql_query_list)
+
+    sql_query = '\n'.join(sql_query_list[:-1])
+    comment = 'Add new roles authorities'
+    change_set_name = f'{properties.date}_001_new_roles_authorities'
+    return CHANGE_SET_SQL_TEMPLATE.replace('$sql', sql_query).replace(COMMENT_CONSTANT, comment) \
+        .replace(AUTHOR_CONSTANT, properties.author).replace(CHANGE_SET_NAME_CONSTANT, change_set_name)
+
+
+def add_authorities_to_roles_in_sql_query_list(authorities_to_roles: list[AuthoritiesToRoles], authority_names: list,
+                                               sql_query_list: list):
+    for authorities_roles in authorities_to_roles:
+        for authority in authorities_roles.authorities:
+            authority_names.append(authority)
+            for role in authorities_roles.to_roles:
+                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_CREATION_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace('$AUTHORITY_NAME', authority))
+                sql_query_list.append('')
+
+
+def add_audit_in_authorities_roles_sql_query_list(authorities_to_roles: list[AuthoritiesToRoles], sql_query_list: list):
+    for authorities_roles in authorities_to_roles:
+        for authority in authorities_roles.authorities:
+            for role in authorities_roles.to_roles:
+                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace('$AUTHORITY_NAME', authority))
+                sql_query_list.append('')
+
+
 def insert_vars_into_user_creation_template(user):
-    return SQL_USER_CREATION_TEMPLATE\
-        .replace('$ACCOUNT_NON_EXPIRED', '1' if user.account_non_expired else '0')\
-        .replace('$ACCOUNT_NON_LOCKED', '1' if user.account_non_locked else '0')\
-        .replace('$CREDENTIALS_NON_EXPIRED', '1' if user.credentials_non_expired else '0')\
-        .replace('$ENABLED', '1' if user.enabled else '0')\
-        .replace('$FIRST_NAME', user.first_name)\
-        .replace('$LAST_NAME', user.last_name)\
-        .replace('$MIDDLE_NAME', user.middle_name)\
-        .replace('$PASSWORD', user.password)\
-        .replace(USERNAME_CONSTANT, user.username)\
-        .replace('$DOMAIN', user.domain)\
+    return SQL_USER_CREATION_TEMPLATE \
+        .replace('$ACCOUNT_NON_EXPIRED', '1' if user.account_non_expired else '0') \
+        .replace('$ACCOUNT_NON_LOCKED', '1' if user.account_non_locked else '0') \
+        .replace('$CREDENTIALS_NON_EXPIRED', '1' if user.credentials_non_expired else '0') \
+        .replace('$ENABLED', '1' if user.enabled else '0') \
+        .replace('$FIRST_NAME', user.first_name) \
+        .replace('$LAST_NAME', user.last_name) \
+        .replace('$MIDDLE_NAME', user.middle_name) \
+        .replace('$PASSWORD', user.password) \
+        .replace(USERNAME_CONSTANT, user.username) \
+        .replace('$DOMAIN', user.domain) \
         .replace('$EMAIL', 'null' if user.email is None else f"'{user.email}'")
 
 
-def get_file_name_contains_from_list(file_name_contains: str, file_names_list: list) -> str:
+def get_file_name_contains_from_list(file_name_contains: str, file_name_not_contains: str,
+                                     file_names_list: list) -> str:
     for file_name in file_names_list:
-        if file_name_contains in file_name:
+        if file_name_contains in file_name and file_name_not_contains not in file_name:
             return file_name
     raise ValueError(f'There is no file contains "{file_name_contains}" in list: {file_names_list}')
 
 
 def create_change_set_files(properties: Properties, change_set_file_names_list: list, liquibase_dir_path: str):
     if properties.has_new_roles():
-        create_change_set_file(liquibase_dir_path, get_file_name_contains_from_list('role', change_set_file_names_list),
-                               properties, MODE_ROLE)
+        create_change_set_file(liquibase_dir_path,
+                               get_file_name_contains_from_list('role', 'to', change_set_file_names_list), properties,
+                               MODE_ROLE)
 
     if properties.has_new_authorities():
         create_change_set_file(liquibase_dir_path,
-                               get_file_name_contains_from_list('authorities', change_set_file_names_list),
+                               get_file_name_contains_from_list('authorities', 'to', change_set_file_names_list),
                                properties, MODE_AUTHORITY)
 
     if properties.has_new_users():
-        create_change_set_file(liquibase_dir_path, get_file_name_contains_from_list('user', change_set_file_names_list),
-                               properties, MODE_USER)
+        create_change_set_file(liquibase_dir_path,
+                               get_file_name_contains_from_list('user', 'to', change_set_file_names_list), properties,
+                               MODE_USER)
+
+    if properties.has_new_authorities_to_roles():
+        create_change_set_file(liquibase_dir_path, get_file_name_contains_from_list('authorities_to_roles', '%',
+                                                                                    change_set_file_names_list),
+                               properties, MODE_AUTHORITIES_TO_ROLES)
+
+    if properties.has_new_users_to_roles():
+        create_change_set_file(liquibase_dir_path,
+                               get_file_name_contains_from_list('users_to_roles', '%', change_set_file_names_list),
+                               properties, MODE_USERS_TO_ROLES)
 
 
 def run():
