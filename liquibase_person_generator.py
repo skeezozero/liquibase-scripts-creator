@@ -11,6 +11,7 @@ CHANGE_SET_CONSTANT = '$change_set'
 CONTEXT_CONSTANT = '$context'
 NAME_CONSTANT = '$NAME'
 USERNAME_CONSTANT = '$USERNAME'
+AUTHORITY_NAME_CONSTANT = '$AUTHORITY_NAME'
 MODE_ROLE = 1
 MODE_AUTHORITY = 2
 MODE_USER = 3
@@ -354,6 +355,41 @@ def create_cumulative_file(liquibase_dir_path: str, properties: Properties) -> l
     return changelog_file_names_list
 
 
+def create_change_set_files(properties: Properties, change_set_file_names_list: list, liquibase_dir_path: str):
+    if properties.has_new_roles():
+        create_change_set_file(liquibase_dir_path,
+                               get_file_name_contains_from_list('role', 'to', change_set_file_names_list), properties,
+                               MODE_ROLE)
+
+    if properties.has_new_authorities():
+        create_change_set_file(liquibase_dir_path,
+                               get_file_name_contains_from_list('authorit', 'to', change_set_file_names_list),
+                               properties, MODE_AUTHORITY)
+
+    if properties.has_new_users():
+        create_change_set_file(liquibase_dir_path,
+                               get_file_name_contains_from_list('user', 'to', change_set_file_names_list), properties,
+                               MODE_USER)
+
+    if properties.has_new_authorities_to_roles():
+        create_change_set_file(liquibase_dir_path, get_file_name_contains_from_list('authorities_to_roles', '%',
+                                                                                    change_set_file_names_list),
+                               properties, MODE_AUTHORITIES_TO_ROLES)
+
+    if properties.has_new_users_to_roles():
+        create_change_set_file(liquibase_dir_path,
+                               get_file_name_contains_from_list('users_to_roles', '%', change_set_file_names_list),
+                               properties, MODE_USERS_TO_ROLES)
+
+
+def get_file_name_contains_from_list(file_name_contains: str, file_name_not_contains: str,
+                                     file_names_list: list) -> str:
+    for file_name in file_names_list:
+        if file_name_contains in file_name and file_name_not_contains not in file_name:
+            return file_name
+    raise ValueError(f'There is no file contains "{file_name_contains}" in list: {file_names_list}')
+
+
 def create_change_set_file(liquibase_dir_path: str, file_name: str, properties: Properties, mode: int):
     change_set_file_path = f'{liquibase_dir_path}/{file_name}'
     change_set_file = open(change_set_file_path, "w")
@@ -384,45 +420,6 @@ def create_change_set_file(liquibase_dir_path: str, file_name: str, properties: 
         change_set_file.write(CHANGE_SET_TEMPLATE.replace(CONTEXT_CONSTANT, context).replace(CHANGE_SET_CONSTANT, sql))
 
     change_set_file.close()
-
-
-def create_users_to_roles_sql(properties: Properties) -> str:
-    users_to_roles_list = properties.users_to_roles
-    sql_query_list = []
-    usernames = []
-
-    add_users_to_roles_in_sql_query_list(sql_query_list, usernames, users_to_roles_list)
-
-    sql_query_list.append(SQL_NEW_REVISION_RECORD)
-    sql_query_list.append('')
-
-    add_audit_in_users_to_roles_sql_query_list(sql_query_list, users_to_roles_list)
-
-    sql_query = '\n'.join(sql_query_list[:-1])
-    comment = 'Add new link between roles and users'
-    change_set_name = f'{properties.date}_001_new_link_between_roles_and_authorities'
-    return CHANGE_SET_SQL_TEMPLATE.replace('$sql', sql_query).replace(COMMENT_CONSTANT, comment) \
-        .replace(AUTHOR_CONSTANT, properties.author).replace(CHANGE_SET_NAME_CONSTANT, change_set_name)
-
-
-def add_audit_in_users_to_roles_sql_query_list(sql_query_list: list, users_to_roles_list: list[UsersToRoles]):
-    for users_roles in users_to_roles_list:
-        for username in users_roles.users:
-            for role in users_roles.to_roles:
-                sql_query_list.append(SQL_USER_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
-                                      .replace(USERNAME_CONSTANT, username))
-                sql_query_list.append('')
-
-
-def add_users_to_roles_in_sql_query_list(sql_query_list: list, usernames: list,
-                                         users_to_roles_list: list[UsersToRoles]):
-    for users_roles in users_to_roles_list:
-        for username in users_roles.users:
-            usernames.append(username)
-            for role in users_roles.to_roles:
-                sql_query_list.append(SQL_USER_TO_ROLE_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
-                                      .replace(USERNAME_CONSTANT, username))
-                sql_query_list.append('')
 
 
 def create_role_sql(properties: Properties) -> str:
@@ -469,31 +466,6 @@ def create_authority_sql(properties: Properties) -> str:
         .replace(AUTHOR_CONSTANT, properties.author).replace(CHANGE_SET_NAME_CONSTANT, change_set_name)
 
 
-def add_audit_in_authorities_sql_query_list(authorities, sql_query_list):
-    for authority in authorities:
-        sql_query_list.append(SQL_AUTHORITY_AUDIT_TEMPLATE.replace('$NAME', authority.name))
-        sql_query_list.append('')
-        if authority.roles is not None and len(list(authority.roles)) > 0:
-            for role in authority.roles:
-                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
-                                      .replace('$AUTHORITY_NAME', authority.name))
-                sql_query_list.append('')
-
-
-def add_authorities_in_sql_query_list(authorities, authority_names, sql_query_list):
-    for authority in authorities:
-        authority_names.append(authority.name)
-        sql_query_list.append(SQL_AUTHORITY_CREATION_TEMPLATE
-                              .replace(NAME_CONSTANT, authority.name)
-                              .replace('$DESCRIPTION', authority.description))
-        sql_query_list.append('')
-        if authority.roles is not None and len(list(authority.roles)) > 0:
-            for role in authority.roles:
-                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_CREATION_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
-                                      .replace('$AUTHORITY_NAME', authority.name))
-                sql_query_list.append('')
-
-
 def create_user_sql(properties: Properties) -> str:
     users = properties.users
     sql_query_list = []
@@ -511,29 +483,6 @@ def create_user_sql(properties: Properties) -> str:
     change_set_name = f'{properties.date}_001_new_user{"s" if len(usernames) > 1 else ""}'
     return CHANGE_SET_SQL_TEMPLATE.replace('$sql', sql_query).replace(COMMENT_CONSTANT, comment) \
         .replace(AUTHOR_CONSTANT, properties.author).replace(CHANGE_SET_NAME_CONSTANT, change_set_name)
-
-
-def add_audit_in_users_sql_query_list(sql_query_list, users):
-    for user in users:
-        sql_query_list.append(SQL_USER_AUDIT_TEMPLATE.replace(USERNAME_CONSTANT, user.username))
-        sql_query_list.append('')
-        if user.roles is not None and len(list(user.roles)) > 0:
-            for role in user.roles:
-                sql_query_list.append(SQL_USER_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
-                                      .replace(USERNAME_CONSTANT, user.username))
-                sql_query_list.append('')
-
-
-def add_users_in_sql_query_list(sql_query_list, usernames, users):
-    for user in users:
-        usernames.append(user.username)
-        sql_query_list.append(insert_vars_into_user_creation_template(user))
-        sql_query_list.append('')
-        if user.roles is not None and len(list(user.roles)) > 0:
-            for role in user.roles:
-                sql_query_list.append(SQL_USER_TO_ROLE_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
-                                      .replace(USERNAME_CONSTANT, user.username))
-                sql_query_list.append('')
 
 
 def create_authorities_to_roles_sql(properties: Properties) -> str:
@@ -555,26 +504,23 @@ def create_authorities_to_roles_sql(properties: Properties) -> str:
         .replace(AUTHOR_CONSTANT, properties.author).replace(CHANGE_SET_NAME_CONSTANT, change_set_name)
 
 
-def add_authorities_to_roles_in_sql_query_list(authorities_to_roles_list: list[AuthoritiesToRoles],
-                                               authority_names: list,
-                                               sql_query_list: list):
-    for authorities_roles in authorities_to_roles_list:
-        for authority in authorities_roles.authorities:
-            authority_names.append(authority)
-            for role in authorities_roles.to_roles:
-                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_CREATION_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
-                                      .replace('$AUTHORITY_NAME', authority))
-                sql_query_list.append('')
+def create_users_to_roles_sql(properties: Properties) -> str:
+    users_to_roles_list = properties.users_to_roles
+    sql_query_list = []
+    usernames = []
 
+    add_users_to_roles_in_sql_query_list(sql_query_list, usernames, users_to_roles_list)
 
-def add_audit_in_authorities_roles_sql_query_list(authorities_to_roles_list: list[AuthoritiesToRoles],
-                                                  sql_query_list: list):
-    for authorities_roles in authorities_to_roles_list:
-        for authority in authorities_roles.authorities:
-            for role in authorities_roles.to_roles:
-                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
-                                      .replace('$AUTHORITY_NAME', authority))
-                sql_query_list.append('')
+    sql_query_list.append(SQL_NEW_REVISION_RECORD)
+    sql_query_list.append('')
+
+    add_audit_in_users_to_roles_sql_query_list(sql_query_list, users_to_roles_list)
+
+    sql_query = '\n'.join(sql_query_list[:-1])
+    comment = 'Add new link between roles and users'
+    change_set_name = f'{properties.date}_001_new_link_between_roles_and_authorities'
+    return CHANGE_SET_SQL_TEMPLATE.replace('$sql', sql_query).replace(COMMENT_CONSTANT, comment) \
+        .replace(AUTHOR_CONSTANT, properties.author).replace(CHANGE_SET_NAME_CONSTANT, change_set_name)
 
 
 def insert_vars_into_user_creation_template(user):
@@ -592,39 +538,94 @@ def insert_vars_into_user_creation_template(user):
         .replace('$EMAIL', 'null' if user.email is None else f"'{user.email}'")
 
 
-def get_file_name_contains_from_list(file_name_contains: str, file_name_not_contains: str,
-                                     file_names_list: list) -> str:
-    for file_name in file_names_list:
-        if file_name_contains in file_name and file_name_not_contains not in file_name:
-            return file_name
-    raise ValueError(f'There is no file contains "{file_name_contains}" in list: {file_names_list}')
+def add_authorities_in_sql_query_list(authorities, authority_names, sql_query_list):
+    for authority in authorities:
+        authority_names.append(authority.name)
+        sql_query_list.append(SQL_AUTHORITY_CREATION_TEMPLATE
+                              .replace(NAME_CONSTANT, authority.name)
+                              .replace('$DESCRIPTION', authority.description))
+        sql_query_list.append('')
+        if authority.roles is not None and len(list(authority.roles)) > 0:
+            for role in authority.roles:
+                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_CREATION_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace(AUTHORITY_NAME_CONSTANT, authority.name))
+                sql_query_list.append('')
 
 
-def create_change_set_files(properties: Properties, change_set_file_names_list: list, liquibase_dir_path: str):
-    if properties.has_new_roles():
-        create_change_set_file(liquibase_dir_path,
-                               get_file_name_contains_from_list('role', 'to', change_set_file_names_list), properties,
-                               MODE_ROLE)
+def add_users_in_sql_query_list(sql_query_list, usernames, users):
+    for user in users:
+        usernames.append(user.username)
+        sql_query_list.append(insert_vars_into_user_creation_template(user))
+        sql_query_list.append('')
+        if user.roles is not None and len(list(user.roles)) > 0:
+            for role in user.roles:
+                sql_query_list.append(SQL_USER_TO_ROLE_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace(USERNAME_CONSTANT, user.username))
+                sql_query_list.append('')
 
-    if properties.has_new_authorities():
-        create_change_set_file(liquibase_dir_path,
-                               get_file_name_contains_from_list('authorit', 'to', change_set_file_names_list),
-                               properties, MODE_AUTHORITY)
 
-    if properties.has_new_users():
-        create_change_set_file(liquibase_dir_path,
-                               get_file_name_contains_from_list('user', 'to', change_set_file_names_list), properties,
-                               MODE_USER)
+def add_authorities_to_roles_in_sql_query_list(authorities_to_roles_list: list[AuthoritiesToRoles],
+                                               authority_names: list,
+                                               sql_query_list: list):
+    for authorities_roles in authorities_to_roles_list:
+        for authority in authorities_roles.authorities:
+            authority_names.append(authority)
+            for role in authorities_roles.to_roles:
+                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_CREATION_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace(AUTHORITY_NAME_CONSTANT, authority))
+                sql_query_list.append('')
 
-    if properties.has_new_authorities_to_roles():
-        create_change_set_file(liquibase_dir_path, get_file_name_contains_from_list('authorities_to_roles', '%',
-                                                                                    change_set_file_names_list),
-                               properties, MODE_AUTHORITIES_TO_ROLES)
 
-    if properties.has_new_users_to_roles():
-        create_change_set_file(liquibase_dir_path,
-                               get_file_name_contains_from_list('users_to_roles', '%', change_set_file_names_list),
-                               properties, MODE_USERS_TO_ROLES)
+def add_users_to_roles_in_sql_query_list(sql_query_list: list, usernames: list,
+                                         users_to_roles_list: list[UsersToRoles]):
+    for users_roles in users_to_roles_list:
+        for username in users_roles.users:
+            usernames.append(username)
+            for role in users_roles.to_roles:
+                sql_query_list.append(SQL_USER_TO_ROLE_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace(USERNAME_CONSTANT, username))
+                sql_query_list.append('')
+
+
+def add_audit_in_authorities_roles_sql_query_list(authorities_to_roles_list: list[AuthoritiesToRoles],
+                                                  sql_query_list: list):
+    for authorities_roles in authorities_to_roles_list:
+        for authority in authorities_roles.authorities:
+            for role in authorities_roles.to_roles:
+                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace(AUTHORITY_NAME_CONSTANT, authority))
+                sql_query_list.append('')
+
+
+def add_audit_in_users_sql_query_list(sql_query_list, users):
+    for user in users:
+        sql_query_list.append(SQL_USER_AUDIT_TEMPLATE.replace(USERNAME_CONSTANT, user.username))
+        sql_query_list.append('')
+        if user.roles is not None and len(list(user.roles)) > 0:
+            for role in user.roles:
+                sql_query_list.append(SQL_USER_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace(USERNAME_CONSTANT, user.username))
+                sql_query_list.append('')
+
+
+def add_audit_in_authorities_sql_query_list(authorities, sql_query_list):
+    for authority in authorities:
+        sql_query_list.append(SQL_AUTHORITY_AUDIT_TEMPLATE.replace('$NAME', authority.name))
+        sql_query_list.append('')
+        if authority.roles is not None and len(list(authority.roles)) > 0:
+            for role in authority.roles:
+                sql_query_list.append(SQL_AUTHORITY_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace(AUTHORITY_NAME_CONSTANT, authority.name))
+                sql_query_list.append('')
+
+
+def add_audit_in_users_to_roles_sql_query_list(sql_query_list: list, users_to_roles_list: list[UsersToRoles]):
+    for users_roles in users_to_roles_list:
+        for username in users_roles.users:
+            for role in users_roles.to_roles:
+                sql_query_list.append(SQL_USER_TO_ROLE_AUDIT_TEMPLATE.replace(ROLE_NAME_CONSTANT, role)
+                                      .replace(USERNAME_CONSTANT, username))
+                sql_query_list.append('')
 
 
 def run():
