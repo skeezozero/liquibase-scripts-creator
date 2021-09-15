@@ -170,11 +170,11 @@ users-to-roles:
 | version | Liquibase scripts version | String | 5.5.9 | Yes | 
 | date | Liquibase scripts date | String | 2021-07-23 | Yes |
 | author | Liquibase scripts author | String | Test Testovich | Yes |
-| new-roles | New roles to add | List | _See new roles list fields info_ | No |
-| new-authorities | New authorities to add | List | _See new authorities list fields info_ | No |
-| new-users | New users to add | List | _See new users list fields info_ | No |
-| authorities-to-roles | Create link between existing authorities and roles | List | _See authorities to roles list fields info_ | No |
-| users-to-roles | Create link between existing users and roles | List | _See users to roles fields info_ | No |
+| new-roles | New roles to add | List | _See second level new roles list fields info_ | No |
+| new-authorities | New authorities to add | List | _See second level new authorities list fields info_ | No |
+| new-users | New users to add | List | _See second level new users list fields info_ | No |
+| authorities-to-roles | Create link between existing authorities and roles | List | _See second level authorities to roles list fields info_ | No |
+| users-to-roles | Create link between existing users and roles | List | _See second level users to roles fields info_ | No |
 
 Back to [content](#content).
 ## Second level fields
@@ -182,35 +182,35 @@ Back to [content](#content).
 | Field name | Info | Field type | Example | Required |
 | --- | --- | --- | --- | --- |
 | context | Liquibase scripts context | List of strings | - production<br>- list | Yes | 
-| roles | New roles list | List | _See roles list fields info_ | Yes |
+| roles | New roles list | List | _See third level roles list fields info_ | Yes |
 
 Back to [content](#content).
 ### New authorities list
 | Field name | Info | Field type | Example | Required |
 | --- | --- | --- | --- | --- |
 | context | Liquibase scripts context | List of strings | - production<br>- list | Yes | 
-| authorities | New authorities list | List | _See authorities list fields info_ | Yes |
+| authorities | New authorities list | List | _See third level authorities list fields info_ | Yes |
 
 Back to [content](#content).
 ### New users list
 | Field name | Info | Field type | Example | Required |
 | --- | --- | --- | --- | --- |
 | context | Liquibase scripts context | List of strings | - production<br>- list | Yes | 
-| users | New users list | List | _See users list fields info_ | Yes |
+| users | New users list | List | _See third level users list fields info_ | Yes |
 
 Back to [content](#content).
 ### Authorities to roles list
 | Field name | Info | Field type | Example | Required |
 | --- | --- | --- | --- | --- |
 | context | Liquibase scripts context | List of strings | - production<br>- list | Yes | 
-| link | Link between existing authorities and roles | List | _See authorities to roles link fields info_ | Yes |
+| link | Link between existing authorities and roles | List | _See third level authorities to roles link fields info_ | Yes |
 
 Back to [content](#content).
 ### Users to roles list
 | Field name | Info | Field type | Example | Required |
 | --- | --- | --- | --- | --- |
 | context | Liquibase scripts context | List of strings | - production<br>- list | Yes | 
-| link | Link between existing users and roles | List | _See users to roles link fields info_ | Yes |
+| link | Link between existing users and roles | List | _See third level users to roles link fields info_ | Yes |
 
 Back to [content](#content).
 ## Third level fields
