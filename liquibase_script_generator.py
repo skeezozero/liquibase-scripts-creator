@@ -22,8 +22,8 @@ START_INFO = f'''
 Liquibase Script Generator v <version>
 '''.replace('<version>', SCRIPT_VERSION)
 HELP_INFO = '''Options:
-1. Specify yml absolute path with parameters. Example: "python3 liquibase_person_generator.py C://script/example.yml"
-2. Create example .yml file: "python3 liquibase_person_generator.py createExample"'''
+1. Specify yml absolute path with parameters. Example: "python3 liquibase_script_generator.py C://script/example.yml"
+2. Create example .yml file: "python3 liquibase_script_generator.py createExample"'''
 CUMULATIVE_TEMPLATE = '''<?xml version="1.0" encoding="UTF-8"?>
 <databaseChangeLog
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

@@ -36,19 +36,19 @@ Back to [content](#content).
 Back to [content](#content).
 ## Usage
 Script options:
-1. `python3 liquibase_person_generator.py <yml_absolute_path>` – create scripts in working dir.
-2. `python3 liquibase_person_generator.py createExample` – create example `.yml` file in working dir.
+1. `python3 liquibase_script_generator.py <yml_absolute_path>` – create scripts in working dir.
+2. `python3 liquibase_script_generator.py createExample` – create example `.yml` file in working dir.
 
 By configuring `.yml` file script will create liquibase scripts for new users/roles/authorities or link 
 users/authorities with existing roles.  
 <details>
 <summary>File hierarchy example ...</summary>
 
-File hierarchy after using command `python3 liquibase_person_generator.py <yml_absolute_path>` with `example_yml_file.yml`:
+File hierarchy after using command `python3 liquibase_script_generator.py <yml_absolute_path>` with `example_yml_file.yml`:
 ```
 <working dir>
 ├── ...
-├── liquibase_person_generator.py
+├── liquibase_script_generator.py
 └── v-5.6.0
     ├── 20210723_001_DML_roles.xml
     ├── 20210723_002_DML_authorities.xml
@@ -62,7 +62,7 @@ File hierarchy after using command `python3 liquibase_person_generator.py <yml_a
 Back to [content](#content).
 ## Example of .yml file
 Example of `.yml` file.  
-Can be created by command `python3 liquibase_person_generator.py createExample`.
+Can be created by command `python3 liquibase_script_generator.py createExample`.
 <details>
 <summary>Description ...</summary>
 
