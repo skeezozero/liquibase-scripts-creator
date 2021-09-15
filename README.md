@@ -30,8 +30,8 @@ Quick way to create multiple liquibase scripts via python.
 
 Back to [content](#content).
 ## Installation
-Install [Python > 3.9](https://www.python.org/).  
-Additional libraries can be installed in terminal by `pip install <library_name>`.
+1. Install [Python > 3.9](https://www.python.org/).  
+2. Additional libraries can be installed in terminal by `pip install <library_name>`.
 
 Back to [content](#content).
 ## Usage
